@@ -277,6 +277,74 @@
     color: var(--brand-soft); letter-spacing: 4px; margin-top: 4px;
   }
 
+  /* ============== Quick Templates ============== */
+  .templates {
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    background: var(--bg-soft);
+  }
+  .template-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .template-header .title {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 12px; letter-spacing: 4px; color: var(--brand);
+    text-transform: uppercase;
+  }
+  .template-header .hint {
+    font-size: 10px; color: var(--muted); letter-spacing: 2px;
+  }
+  .template-tabs {
+    display: flex; flex-wrap: wrap; gap: 4px;
+    padding: 10px 14px 0; background: var(--bg-soft);
+  }
+  .template-tab {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 12px; font-weight: 500;
+    color: var(--text-dim); letter-spacing: 1px;
+    cursor: pointer; transition: all .15s;
+  }
+  .template-tab:hover { color: var(--brand); border-color: var(--brand-soft); }
+  .template-tab.active {
+    background: var(--brand); color: var(--bg);
+    border-color: var(--brand);
+  }
+  .template-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+    padding: 10px 14px 14px;
+  }
+  .template-btn {
+    padding: 10px 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    font-family: "Noto Sans KR", sans-serif;
+    font-size: 13px; line-height: 1.5;
+    color: var(--text); text-align: left;
+    cursor: pointer; transition: all .15s;
+    white-space: normal; word-break: keep-all;
+  }
+  .template-btn:hover {
+    border-color: var(--brand);
+    background: #1e1a14;
+    color: var(--brand);
+  }
+  .template-btn:active {
+    transform: scale(0.98);
+  }
+  @media (max-width: 820px) {
+    .template-buttons { grid-template-columns: 1fr; }
+  }
+
   .font-controls { position: fixed; bottom: 20px; right: 20px; display: flex; gap: 8px; z-index: 10; }
   .font-controls button {
     width: 46px; height: 46px; border-radius: 50%;
@@ -360,6 +428,14 @@
           <span class="label">Korean Input</span>
           <span class="badge" id="roomBadge"></span>
         </div>
+        <div class="templates">
+          <div class="template-header">
+            <span class="title">Quick Phrases · 자주 쓰는 멘트</span>
+            <span class="hint">클릭하면 입력창에 채워집니다</span>
+          </div>
+          <div class="template-tabs" id="templateTabs"></div>
+          <div class="template-buttons" id="templateButtons"></div>
+        </div>
         <textarea id="inputArea" placeholder="여기에 한국어로 입력하세요. 타이핑하는 대로 태블릿에 실시간 전송됩니다."></textarea>
         <div class="toolbar">
           <button onclick="clearAll()" class="danger">Clear</button>
@@ -408,6 +484,78 @@
 const LANGS = ['en', 'zh-CN', 'ja'];
 const LANG_LABEL = { 'en': 'English', 'zh-CN': '中文 (Chinese)', 'ja': '日本語 (Japanese)' };
 const DEBOUNCE_MS = 500;
+
+/* ================= Quick Templates ================= */
+/* 카테고리별로 자주 쓰는 상담 멘트. 필요에 따라 자유롭게 수정/추가하세요. */
+const TEMPLATES = [
+  {
+    category: '인사·안내',
+    phrases: [
+      '안녕하세요, 오늘 상담 도와드릴 실장입니다.',
+      '편하게 이쪽으로 앉으실게요.',
+      '잠시만 기다려주세요. 곧 원장님께서 오십니다.',
+      '시술 끝나셨습니다. 수고 많으셨어요.',
+      '오늘 방문해 주셔서 감사합니다.',
+      '혹시 궁금하신 점이 있으시면 편하게 말씀해 주세요.',
+    ],
+  },
+  {
+    category: '상담·문진',
+    phrases: [
+      '어느 부위가 가장 신경 쓰이세요?',
+      '이전에 받으신 시술이 있으신가요?',
+      '알레르기나 현재 복용 중인 약이 있으신가요?',
+      '임신 중이시거나 계획이 있으신가요?',
+      '원하시는 느낌을 조금 더 자세히 말씀해 주시겠어요?',
+      '사진 한 장 찍어드려도 괜찮을까요? 상담용으로만 사용됩니다.',
+    ],
+  },
+  {
+    category: '시술 설명',
+    phrases: [
+      '보톡스는 약 10~15분 소요되며, 효과는 4~6개월 지속됩니다.',
+      '필러는 약 20~30분 소요되며, 효과는 6~12개월 지속됩니다.',
+      '시술 전 마취 크림을 약 30분간 도포하겠습니다.',
+      '레이저 시술 시 약간의 따끔함이 있을 수 있습니다.',
+      '리프팅 시술은 약 40~60분 정도 소요됩니다.',
+      '통증은 거의 없지만 민감하시면 말씀해 주세요.',
+    ],
+  },
+  {
+    category: '가격·결제',
+    phrases: [
+      '오늘 시술 총 금액은 다음과 같습니다.',
+      '결제는 카드 또는 현금으로 가능합니다.',
+      '오늘 이벤트 할인가로 안내드리고 있습니다.',
+      '패키지로 구매하시면 추가 할인이 적용됩니다.',
+      '부가세 포함 가격입니다.',
+      '분할 결제도 가능하니 편하게 말씀해 주세요.',
+    ],
+  },
+  {
+    category: '주의사항',
+    phrases: [
+      '시술 후 24시간 동안 사우나, 찜질방, 음주는 피해주세요.',
+      '시술 부위를 문지르거나 마사지하지 말아주세요.',
+      '자외선 차단제를 꼭 사용해 주세요.',
+      '붓기나 멍은 2~3일 내에 자연스럽게 가라앉습니다.',
+      '당일 과격한 운동은 피해주세요.',
+      '이상 반응이 있으면 즉시 저희 쪽으로 연락주세요.',
+    ],
+  },
+  {
+    category: '마무리·예약',
+    phrases: [
+      '다음 방문은 언제가 편하실까요?',
+      '시술 후 2주 뒤 확인차 방문을 권장드립니다.',
+      '궁금하신 점 있으시면 언제든 연락주세요.',
+      '오늘 시술 만족스러우셨길 바랍니다.',
+      '다음 예약은 카카오톡으로도 가능합니다.',
+      '감사합니다. 조심히 돌아가세요.',
+    ],
+  },
+];
+let activeTemplateCat = 0;
 
 /* ================= State ================= */
 let role = null, roomCode = null, peer = null;
@@ -489,7 +637,53 @@ function initPeerPC() {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => translateAndBroadcast(text), DEBOUNCE_MS);
   });
+  renderTemplates();
   input.focus();
+}
+
+/* ================= Quick Templates rendering ================= */
+function renderTemplates() {
+  const tabs = $('templateTabs');
+  const buttons = $('templateButtons');
+  if (!tabs || !buttons) return;
+
+  /* render category tabs */
+  tabs.innerHTML = '';
+  TEMPLATES.forEach((cat, idx) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'template-tab' + (idx === activeTemplateCat ? ' active' : '');
+    tab.textContent = cat.category;
+    tab.addEventListener('click', () => {
+      activeTemplateCat = idx;
+      renderTemplates();
+    });
+    tabs.appendChild(tab);
+  });
+
+  /* render phrase buttons for active category */
+  buttons.innerHTML = '';
+  const phrases = TEMPLATES[activeTemplateCat].phrases;
+  phrases.forEach(phrase => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'template-btn';
+    btn.textContent = phrase;
+    btn.title = phrase;
+    btn.addEventListener('click', () => useTemplate(phrase));
+    buttons.appendChild(btn);
+  });
+}
+
+function useTemplate(text) {
+  const ta = $('inputArea');
+  if (!ta) return;
+  ta.value = text; /* replace existing content */
+  /* dispatch input event so live translation pipeline runs */
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  ta.focus();
+  /* move cursor to end */
+  ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 function initPeerTablet() {
