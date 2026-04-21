@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// ============================================================
+// 🔒 뷰티파크 번역 시스템 Firestore 보안 규칙 (프로덕션)
+// ============================================================
+//
+// 보안 전략:
+// 1. Firebase 익명 인증(Anonymous Auth)이 필요 — 로그인하지 않으면 접근 불가
+// 2. /rooms/{roomId} 하위 컬렉션(state, presence)만 허용 — 그 외 경로는 전부 차단
+// 3. 각 문서 필드 타입/크기 기본 검증
+//
+// Vercel 서버 API(/api/translate, /api/auth)는 Firebase Admin SDK를 사용하지 않고
+// 순수 클라이언트가 인증한 상태에서만 Firestore에 쓰기 때문에, 이 규칙이 핵심 방어선입니다.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── 헬퍼 함수 ────────────────────────────────────────────
+    function isAnon() {
+      return request.auth != null;
+    }
+    function validRoomId(rid) {
+      return rid is string && rid.size() > 0 && rid.size() < 32
+             && rid.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    // ── Rooms: /rooms/{roomId} ───────────────────────────────
+    match /rooms/{roomId} {
+      // 루트 문서는 직접 쓸 필요 없음
+      allow read, write: if false;
+
+      // 현재 번역 상태 + 이력
+      match /state/{docId} {
+        allow read: if isAnon() && validRoomId(roomId);
+        allow write: if isAnon() && validRoomId(roomId)
+                     && request.resource.size < 50000;
+      }
+
+      // 디바이스 presence (PC/태블릿 heartbeat)
+      match /presence/{deviceId} {
+        allow read: if isAnon() && validRoomId(roomId);
+        allow write: if isAnon() && validRoomId(roomId)
+                     && (deviceId == 'pc' || deviceId == 'tablet')
+                     && request.resource.data.keys().hasOnly(['lastPing'])
+                     && request.resource.data.lastPing is number;
+      }
+    }
+
+    // ── 그 외 모든 경로 차단 ──────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
