@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Noto+Serif+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
-  :root {
+  :root, [data-theme="dark"] {
     --bg:          #0b0b0c;
     --bg-soft:     #15151a;
     --panel:       #1a1a1f;
@@ -24,6 +24,22 @@
     --ok:          #8abd9e;
     --warn:        #d4b370;
     --err:         #d08a8a;
+  }
+  [data-theme="light"] {
+    --bg:          #faf7f2;          /* warm ivory */
+    --bg-soft:     #f2ede4;
+    --panel:       #ffffff;
+    --panel-light: #f7f2e9;
+    --line:        #e3dccf;
+    --brand:       #8d7a64;          /* deeper bronze for contrast on light bg */
+    --brand-soft:  #a18c74;
+    --brand-dim:   #c9bda9;
+    --text:        #2a2521;
+    --text-dim:    #6b6158;
+    --muted:       #a59c90;
+    --ok:          #3d8159;
+    --warn:        #a87d2b;
+    --err:         #b14a4a;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -45,20 +61,33 @@
     display: flex; align-items: center; justify-content: space-between; gap: 16px;
   }
   .brand-left { display: flex; align-items: center; gap: 14px; }
-  .logo-wrap { height: 44px; display: flex; align-items: center; }
-  .logo-wrap img { height: 100%; display: block; }
-  .logo-fallback { display: flex; align-items: center; gap: 12px; }
-  .logo-mark {
-    width: 38px; height: 48px; border: 1.2px solid var(--brand); border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; position: relative;
+  .logo-wrap { height: 52px; display: flex; align-items: center; gap: 12px; }
+  .bp-logo {
+    height: 100%; width: auto; display: block;
+    color: var(--brand);
+    flex-shrink: 0;
   }
-  .logo-mark::before {
-    content: "✦"; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
-    color: var(--brand); font-size: 9px;
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .theme-toggle {
+    width: 36px; height: 36px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--brand);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 18px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .2s ease;
+    padding: 0;
   }
-  .logo-mark span {
-    font-family: "Cormorant Garamond", serif; font-weight: 600; font-size: 28px;
-    color: var(--brand); line-height: 1; font-style: italic;
+  .theme-toggle:hover {
+    border-color: var(--brand);
+    background: var(--bg-soft);
+    transform: rotate(180deg);
+  }
+  .theme-toggle .theme-icon {
+    display: inline-block;
+    transition: transform .3s ease;
   }
   .logo-text { display: flex; flex-direction: column; line-height: 1.1; }
   .logo-text .en {
@@ -369,20 +398,28 @@
   <header class="brand">
     <div class="brand-left">
       <div class="logo-wrap">
-        <!-- If logo.png is placed next to this file, it will show. Otherwise the CSS fallback shows. -->
-        <img id="logoImg" src="logo.png" alt="Beauty Park" onerror="this.style.display='none'; document.getElementById('logoFallback').style.display='flex';" />
-        <div id="logoFallback" class="logo-fallback" style="display:none">
-          <div class="logo-mark"><span>𝐵</span></div>
-          <div class="logo-text">
-            <div class="en">BEAUTY PARK</div>
-            <div class="ko">뷰티파크의원 범어점</div>
-          </div>
+        <svg class="bp-logo" viewBox="0 0 82 100" xmlns="http://www.w3.org/2000/svg" aria-label="Beauty Park">
+          <ellipse cx="41" cy="50" rx="38" ry="47" fill="none" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M41 11 L44 20 L53 23 L44 26 L41 35 L38 26 L29 23 L38 20 Z" fill="currentColor"/>
+          <path d="M20 55 Q41 46 62 55" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+          <text x="41" y="78" text-anchor="middle"
+                font-family="'Cormorant Garamond', 'Playfair Display', Georgia, serif"
+                font-size="52" font-weight="500" fill="currentColor">B</text>
+        </svg>
+        <div class="logo-text">
+          <div class="en">BEAUTY PARK</div>
+          <div class="ko">뷰티파크의원 범어점</div>
         </div>
       </div>
       <div class="header-divider"></div>
       <div class="header-subtitle serif">REAL-TIME CONSULTATION</div>
     </div>
-    <span id="status" class="status">READY</span>
+    <div class="header-right">
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="테마 전환" title="라이트/다크 전환">
+        <span class="theme-icon">◐</span>
+      </button>
+      <span id="status" class="status">READY</span>
+    </div>
   </header>
 
   <main id="main">
@@ -480,6 +517,35 @@
 </div>
 
 <script>
+/* ================= Theme (Light / Dark) ================= */
+(function initTheme() {
+  const KEY = 'bp-theme';
+  const saved = (function() {
+    try { return localStorage.getItem(KEY); } catch(e) { return null; }
+  })();
+  const theme = saved || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  /* wait for DOM ready for button wire-up */
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('themeToggle');
+    const icon = btn && btn.querySelector('.theme-icon');
+    if (!btn) return;
+    const updateIcon = () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      if (icon) icon.textContent = cur === 'light' ? '☾' : '◐';
+      btn.title = cur === 'light' ? '다크 모드로 전환' : '라이트 모드로 전환';
+    };
+    updateIcon();
+    btn.addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      const next = cur === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem(KEY, next); } catch(e) {}
+      updateIcon();
+    });
+  });
+})();
+
 /* ================= Configuration ================= */
 const LANGS = ['en', 'zh-CN', 'ja'];
 const LANG_LABEL = { 'en': 'English', 'zh-CN': '中文 (Chinese)', 'ja': '日本語 (Japanese)' };
@@ -492,8 +558,8 @@ const TEMPLATES = [
     category: '인사·안내',
     phrases: [
       '안녕하세요, 오늘 상담 도와드릴 실장입니다.',
-      '편하게 이쪽으로 앉으실게요.',
       '잠시만 기다려주세요. 곧 원장님께서 오십니다.',
+      '당일 진료 일정에 따라 담당 원장님이 변경될 수 있는 점 양해 부탁드립니다.',
       '시술 끝나셨습니다. 수고 많으셨어요.',
       '오늘 방문해 주셔서 감사합니다.',
       '혹시 궁금하신 점이 있으시면 편하게 말씀해 주세요.',
@@ -514,7 +580,9 @@ const TEMPLATES = [
     category: '시술 설명',
     phrases: [
       '보톡스는 약 10~15분 소요되며, 효과는 4~6개월 지속됩니다.',
+      '주름 보톡스 리터치는 시술 후 2주째에 가능하며, 모두 유료로 진행됩니다. 비용은 제품에 따라 안내드릴게요.',
       '필러는 약 20~30분 소요되며, 효과는 6~12개월 지속됩니다.',
+      '필러는 리터치가 불가하며, 시술 후 2주 이내 몰딩만 가능합니다. (단, 애교 필러는 제외)',
       '시술 전 마취 크림을 약 30분간 도포하겠습니다.',
       '레이저 시술 시 약간의 따끔함이 있을 수 있습니다.',
       '리프팅 시술은 약 40~60분 정도 소요됩니다.',
@@ -527,6 +595,7 @@ const TEMPLATES = [
       '오늘 시술 총 금액은 다음과 같습니다.',
       '결제는 카드 또는 현금으로 가능합니다.',
       '오늘 이벤트 할인가로 안내드리고 있습니다.',
+      '첫 방문 이벤트 상품은 당일 결제 시에만 적용 가능하며, 결제 후 한 달 이내에 사용해 주셔야 합니다. (다음 방문 시 적용 불가)',
       '패키지로 구매하시면 추가 할인이 적용됩니다.',
       '부가세 포함 가격입니다.',
       '분할 결제도 가능하니 편하게 말씀해 주세요.',
@@ -820,14 +889,6 @@ function changeFont(delta) {
   $('displayContent').style.fontSize = displaySize + 'px';
 }
 
-/* On load, also trigger logo fallback check if image fails */
-window.addEventListener('load', () => {
-  const img = $('logoImg');
-  if (!img.complete || img.naturalWidth === 0) {
-    img.style.display = 'none';
-    $('logoFallback').style.display = 'flex';
-  }
-});
 </script>
 </body>
 </html>
