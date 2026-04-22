@@ -785,18 +785,104 @@ function broadcast(msg) {
   connections.forEach(c => { try { c.send(msg); } catch(e) {} });
 }
 
-/* ================= Translation ================= */
+/* ================= Translation =================
+ * 번역 라우팅 전략:
+ *   영어 (en):    MyMemory → Google
+ *   일본어 (ja):  DeepL → MyMemory → Google
+ *   중국어 (zh):  DeepL → MyMemory → Google
+ *
+ * DeepL은 한↔일, 한↔중 품질이 압도적이라 1순위로 사용합니다.
+ * DEEPL_API_KEY가 비어있으면 자동으로 MyMemory부터 시작하므로 안전합니다.
+ */
+
+/* ⚠️ 여기에 DeepL API 키를 넣어주세요 (예: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx')
+ *    무료 회원가입: https://www.deepl.com/pro-api  → Free 플랜 가입 → Account → API Keys
+ *    월 50만 자 무료. 키가 비어있으면 DeepL은 건너뛰고 다른 번역기를 사용합니다.
+ */
+const DEEPL_API_KEY = 'a65d6eb2-e69d-4ace-9bf9-fbc556b5a629:fx';
+
+const MYMEMORY_EMAIL = 'jiscompanylimited@gmail.com'; /* 등록 이메일 → 한도 10K → 50K chars/일 */
+
+function isMyMemoryQuotaError(text) {
+  if (!text) return false;
+  const upper = text.toUpperCase();
+  return upper.includes('MYMEMORY WARNING')
+      || upper.includes('USED ALL AVAILABLE')
+      || upper.includes('QUOTA EXCEEDED');
+}
+
 async function translateMyMemory(text, target) {
-  if (!text.trim()) return '';
-  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ko|${target}`;
-  try {
-    const r = await fetch(url);
-    const j = await r.json();
-    return (j.responseData && j.responseData.translatedText) || '';
-  } catch(e) {
-    console.error('translate error', e);
-    return '[번역 오류]';
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ko|${target}&de=${encodeURIComponent(MYMEMORY_EMAIL)}`;
+  const r = await fetch(url);
+  const j = await r.json();
+  const out = (j.responseData && j.responseData.translatedText) || '';
+  if (isMyMemoryQuotaError(out)) throw new Error('mymemory_quota');
+  return out;
+}
+
+async function translateGoogle(text, target) {
+  /* Unofficial Google Translate "gtx" endpoint — works browser-side with CORS, no key required. */
+  const tl = target; /* en, zh-CN, ja */
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ko&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`;
+  const r = await fetch(url);
+  const j = await r.json();
+  /* Response format: [[[translated, original, ...], ...], ...] */
+  if (Array.isArray(j) && Array.isArray(j[0])) {
+    return j[0].map(seg => (seg && seg[0]) || '').join('');
   }
+  return '';
+}
+
+async function translateDeepL(text, target) {
+  if (!DEEPL_API_KEY) throw new Error('deepl_no_key');
+  /* DeepL target language codes */
+  const dlTarget = target === 'zh-CN' ? 'ZH'
+                 : target === 'ja'    ? 'JA'
+                 : 'EN-US';
+  /* Free plan endpoint. (Pro plan is api.deepl.com without -free) */
+  const r = await fetch('https://api-free.deepl.com/v2/translate', {
+    method: 'POST',
+    headers: {
+      'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `text=${encodeURIComponent(text)}&source_lang=KO&target_lang=${dlTarget}`,
+  });
+  if (!r.ok) throw new Error(`deepl_http_${r.status}`);
+  const j = await r.json();
+  return (j.translations && j.translations[0] && j.translations[0].text) || '';
+}
+
+async function translateOne(text, target) {
+  if (!text.trim()) return '';
+
+  /* 일본어/중국어는 DeepL 우선 (키 있을 때만) */
+  if ((target === 'ja' || target === 'zh-CN') && DEEPL_API_KEY) {
+    try {
+      const out = await translateDeepL(text, target);
+      if (out) return out;
+    } catch (e) {
+      console.warn('[translate] DeepL failed, falling back:', e.message);
+    }
+  }
+
+  /* MyMemory */
+  try {
+    const out = await translateMyMemory(text, target);
+    if (out) return out;
+  } catch (e) {
+    console.warn('[translate] MyMemory failed, falling back to Google:', e.message);
+  }
+
+  /* Google Translate */
+  try {
+    const out = await translateGoogle(text, target);
+    if (out) return out;
+  } catch (e) {
+    console.error('[translate] Google fallback failed:', e);
+  }
+
+  return '[번역 오류]';
 }
 
 async function translateAndBroadcast(koText) {
@@ -807,7 +893,7 @@ async function translateAndBroadcast(koText) {
     renderPCPreview();
     return;
   }
-  const results = await Promise.all(LANGS.map(l => translateMyMemory(koText, l)));
+  const results = await Promise.all(LANGS.map(l => translateOne(koText, l)));
   lastTranslations = { en: results[0], 'zh-CN': results[1], ja: results[2] };
   broadcast({ type: 'translations', ko: koText, translations: lastTranslations });
   renderPCPreview();
