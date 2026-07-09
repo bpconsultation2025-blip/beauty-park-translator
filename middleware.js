@@ -20,7 +20,8 @@
  */
 
 // 병원 공인 IP를 여기에 넣으세요 (IPv4/IPv6 모두 가능). 예: ['123.45.67.89', '2001:db8::1']
-const FALLBACK_ALLOWED_IPS = [];
+// 뷰티파크의원 범어점 공인 IP
+const FALLBACK_ALLOWED_IPS = ['112.221.85.218'];
 
 function getAllowList() {
   const fromEnv =
