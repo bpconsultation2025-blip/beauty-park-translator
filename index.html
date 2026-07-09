@@ -453,7 +453,7 @@
       <button id="startBtn" class="primary" disabled>Begin · 시작</button>
 
       <p class="disclaimer">
-        본 시스템은 무료 번역 API(MyMemory)를 사용합니다.<br>
+        본 시스템은 Google Gemini AI 번역 엔진을 사용합니다.<br>
         민감한 의료정보는 입력 전 반드시 확인 바랍니다.
       </p>
     </section>
@@ -786,23 +786,34 @@ function broadcast(msg) {
 }
 
 /* ================= Translation =================
- * 번역 라우팅 전략:
- *   영어 (en):    MyMemory → Google
- *   일본어 (ja):  DeepL → MyMemory → Google
- *   중국어 (zh):  DeepL → MyMemory → Google
- *
- * DeepL은 한↔일, 한↔중 품질이 압도적이라 1순위로 사용합니다.
- * DEEPL_API_KEY가 비어있으면 자동으로 MyMemory부터 시작하므로 안전합니다.
+ * 번역 전략:
+ *   1순위) Gemini AI  — 서버 함수 /api/translate 로 한 번에 en·zh·ja 번역.
+ *          API 키는 서버(Vercel 환경변수 GEMINI_API_KEY)에만 있고
+ *          브라우저로 절대 노출되지 않습니다.
+ *   폴백)  Google(무키) → MyMemory  — Gemini 실패/키 미설정 시 자동 대체.
+ *          클리닉 화면이 절대 멈추지 않도록 하는 안전망입니다.
  */
-
-/* ⚠️ 여기에 DeepL API 키를 넣어주세요 (예: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx')
- *    무료 회원가입: https://www.deepl.com/pro-api  → Free 플랜 가입 → Account → API Keys
- *    월 50만 자 무료. 키가 비어있으면 DeepL은 건너뛰고 다른 번역기를 사용합니다.
- */
-const DEEPL_API_KEY = 'a65d6eb2-e69d-4ace-9bf9-fbc556b5a629:fx';
 
 const MYMEMORY_EMAIL = 'jiscompanylimited@gmail.com'; /* 등록 이메일 → 한도 10K → 50K chars/일 */
 
+/* ── 1순위: Gemini (서버 프록시, 3개 언어 한 번에) ── */
+async function translateGemini(text) {
+  const r = await fetch('/api/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!r.ok) throw new Error(`gemini_http_${r.status}`);
+  const j = await r.json();
+  if (!j.translations) throw new Error('gemini_no_translations');
+  return {
+    en: j.translations.en || '',
+    'zh-CN': j.translations['zh-CN'] || '',
+    ja: j.translations.ja || '',
+  };
+}
+
+/* ── 폴백용: 언어별 무키 번역기 ── */
 function isMyMemoryQuotaError(text) {
   if (!text) return false;
   const upper = text.toUpperCase();
@@ -833,71 +844,62 @@ async function translateGoogle(text, target) {
   return '';
 }
 
-async function translateDeepL(text, target) {
-  if (!DEEPL_API_KEY) throw new Error('deepl_no_key');
-  /* DeepL target language codes */
-  const dlTarget = target === 'zh-CN' ? 'ZH'
-                 : target === 'ja'    ? 'JA'
-                 : 'EN-US';
-  /* Free plan endpoint. (Pro plan is api.deepl.com without -free) */
-  const r = await fetch('https://api-free.deepl.com/v2/translate', {
-    method: 'POST',
-    headers: {
-      'Authorization': `DeepL-Auth-Key ${DEEPL_API_KEY}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: `text=${encodeURIComponent(text)}&source_lang=KO&target_lang=${dlTarget}`,
-  });
-  if (!r.ok) throw new Error(`deepl_http_${r.status}`);
-  const j = await r.json();
-  return (j.translations && j.translations[0] && j.translations[0].text) || '';
-}
-
-async function translateOne(text, target) {
+async function translateOneFallback(text, target) {
   if (!text.trim()) return '';
-
-  /* 일본어/중국어는 DeepL 우선 (키 있을 때만) */
-  if ((target === 'ja' || target === 'zh-CN') && DEEPL_API_KEY) {
-    try {
-      const out = await translateDeepL(text, target);
-      if (out) return out;
-    } catch (e) {
-      console.warn('[translate] DeepL failed, falling back:', e.message);
-    }
-  }
-
-  /* MyMemory */
-  try {
-    const out = await translateMyMemory(text, target);
-    if (out) return out;
-  } catch (e) {
-    console.warn('[translate] MyMemory failed, falling back to Google:', e.message);
-  }
-
-  /* Google Translate */
+  /* Google(무키) 우선 → MyMemory */
   try {
     const out = await translateGoogle(text, target);
     if (out) return out;
   } catch (e) {
-    console.error('[translate] Google fallback failed:', e);
+    console.warn('[translate] Google fallback failed:', e.message);
   }
-
+  try {
+    const out = await translateMyMemory(text, target);
+    if (out) return out;
+  } catch (e) {
+    console.error('[translate] MyMemory fallback failed:', e.message);
+  }
   return '[번역 오류]';
 }
 
+async function translateAllFallback(koText) {
+  const results = await Promise.all(LANGS.map(l => translateOneFallback(koText, l)));
+  return { en: results[0], 'zh-CN': results[1], ja: results[2] };
+}
+
+/* 빠르게 타이핑할 때 이전(느린) 요청이 최신 결과를 덮어쓰지 않도록 하는 시퀀스 가드 */
+let translateSeq = 0;
+
 async function translateAndBroadcast(koText) {
   lastKo = koText;
+  const seq = ++translateSeq;
+
   if (!koText.trim()) {
     lastTranslations = { en: '', 'zh-CN': '', ja: '' };
     broadcast({ type: 'translations', ko: '', translations: lastTranslations });
     renderPCPreview();
     return;
   }
-  const results = await Promise.all(LANGS.map(l => translateOne(koText, l)));
-  lastTranslations = { en: results[0], 'zh-CN': results[1], ja: results[2] };
+
+  let translations;
+  let engine = 'gemini';
+  try {
+    translations = await translateGemini(koText);
+  } catch (e) {
+    console.warn('[translate] Gemini unavailable, using fallback:', e.message);
+    engine = 'fallback';
+    translations = await translateAllFallback(koText);
+  }
+
+  /* 더 최신 요청이 이미 진행 중이면 이 결과는 버림 */
+  if (seq !== translateSeq) return;
+
+  lastTranslations = translations;
   broadcast({ type: 'translations', ko: koText, translations: lastTranslations });
   renderPCPreview();
-  $('sentInfo').textContent = 'LAST UPDATE ' + new Date().toLocaleTimeString();
+  $('sentInfo').textContent =
+    (engine === 'gemini' ? 'GEMINI · ' : 'FALLBACK · ') +
+    'LAST UPDATE ' + new Date().toLocaleTimeString();
 }
 
 function renderPCPreview() {

@@ -1,48 +1,44 @@
-# v1.1 프로덕션 업그레이드 노트
+# v2.0 업그레이드 노트 — 번역 엔진을 Gemini로 교체
 
-기존 rudimentary 버전을 이 코드로 교체하면 아래 항목들이 적용됩니다.
+## 🔤 번역 엔진 교체
 
-## 🔒 보안 강화
-
-| 항목 | 이전 | 현재 (v1.1) |
+| 항목 | 이전 (v1.x) | 현재 (v2.0) |
 |---|---|---|
-| Firestore 규칙 | 누구나 read/write | 익명 인증된 사용자만, 경로/필드/타입 검증 |
-| Firebase Auth | 없음 | 익명 인증 자동 처리 (`ensureAnonAuth`) |
-| API Rate Limit | 없음 | `/api/translate` 방당 분당 30건 |
-| Input 길이 제한 | 없음 | 서버·클라이언트 모두 500자 캡 |
-| 검색엔진 노출 | 가능 | `robots: noindex` + `X-Robots-Tag` |
-| 보안 헤더 | 없음 | HSTS, X-Frame-Options, Permissions-Policy 등 |
+| 번역 엔진 | MyMemory → DeepL → Google(비공식) 3단 폴백 | **Google Gemini AI** (1순위) |
+| 상담 맥락 이해 | 없음 (일반 번역) | 미용·성형 클리닉 맥락 + 의료 톤 프롬프트 |
+| 호출 방식 | 언어별 개별 호출 | **3개 언어를 한 번에** 번역 |
+| 폴백 | — | Gemini 실패 시 Google(무키) 자동 대체 |
 
-## 💰 비용 최적화
+## 🔒 보안 강화 (중요)
 
-- **번역 캐시**: 동일 문장은 5분간 재호출 안 함 → 템플릿 버튼 연타 시 비용 절약
-- **LRU**: 최대 500개 항목 유지, 오래된 항목 자동 폐기
+- 이전 `consultation-translator.html` 에는 **DeepL API 키가 브라우저 코드에 그대로 노출**돼 있었습니다.
+  (`const DEEPL_API_KEY = '...'`) → 누구나 소스 보기로 확인 가능한 상태였습니다.
+- v2.0에서는:
+  - 이 DeepL 키와 관련 코드를 **완전히 제거**했습니다.
+  - Gemini 키는 **서버 함수(`api/translate.js`)에서만** 사용하며, 브라우저로 전송되지 않습니다.
 
-## 🎨 UX 개선
+> ⚠️ **꼭 하세요:** 기존에 노출됐던 DeepL 키
+> `a65d6eb2-...:fx` 는 이미 공개 이력에 남아 있으므로 **DeepL 계정에서 폐기(Revoke)** 하시길 권장합니다.
+> (https://www.deepl.com/account → API keys → 해당 키 삭제)
 
-- 템플릿 패널에 "편집 후 전송" 토글 추가
-- 입력 글자수 카운터 (500자 기준, 90% 넘으면 경고 색상)
-- 페이지 이동 시 presence 즉시 정리 → 상대 기기에 "대기중" 표시 정확화
+## 🧹 프로젝트 구조 정리
 
-## ⚡ 성능
+실제로는 빌드되지 않던(참조 코드 부재) Next.js + Firebase 껍데기를 정리했습니다.
 
-- `next/font/google`로 폰트 자체 호스팅 → FOUT/FOIT 감소, 외부 요청 제거
-- API routes에 `runtime = 'nodejs'` 명시 → 명확한 런타임 결정
+- 제거: `next.config.mjs`, `middleware.js`, `firestore.rules`, `tailwind.config.js`,
+  `postcss.config.mjs`, `jsconfig.json`, 중복된 `consultation-translator.html`
+- 추가: `api/translate.js` (Gemini 프록시), `vercel.json`
+- 앱 본체는 `index.html` 하나 (정적) + 서버리스 함수 하나로 단순화
 
-## ⚠️ 배포 시 주의
+## 🔧 환경변수 변화
 
-기존 Firebase 프로젝트에 이 코드를 연결할 때:
-
-1. **Firebase Console → Authentication → 익명 로그인 활성화** (STEP 2-4 참고)
-2. **Firestore 규칙을 `firestore.rules` 내용으로 교체** (STEP 2-5 참고)
-3. Vercel 환경변수는 변경 없음 (기존 8개 그대로)
-4. Vercel은 main 브랜치 push 감지 후 자동 재배포
+| 이전 (8개) | 현재 (1개) |
+|---|---|
+| `ANTHROPIC_API_KEY` + Firebase 6개 + `AUTH_SECRET` | **`GEMINI_API_KEY`** 하나만 |
+| | (선택) `GEMINI_MODEL` — 기본 `gemini-2.5-flash` |
 
 ## 🧪 배포 후 검증
 
-배포 직후 반드시 확인:
-- [ ] PC에서 로그인 → 번역 전송 → 성공
-- [ ] 태블릿에서 수신 화면 → PC의 전송 내용이 2초 이내 반영
-- [ ] 브라우저 DevTools Network 탭에서 `X-Robots-Tag: noindex` 응답 헤더 확인
-- [ ] 같은 문장 2회 전송 시 두 번째는 `cached: true` 응답 (DevTools Network → /api/translate 응답)
-- [ ] 31번째 요청에서 429 에러 (rate limit) 정상 동작
+- [ ] PC에서 한글 입력 → 영/중/일 번역 표시, 하단에 `GEMINI ·` 표기
+- [ ] 태블릿에서 같은 방 번호 접속 → 2~3초 내 반영
+- [ ] `FALLBACK ·` 으로 뜨면 `GEMINI_API_KEY` 재확인 후 Redeploy
